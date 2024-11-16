@@ -8,13 +8,14 @@ from email.mime.base import MIMEBase
 from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import time
+from pathlib import Path
 import json
+import time
 
 # --- Configuration and Styling ---
 st.set_page_config(
-    page_title="📧 Professional Bulk Email Sender",
-    page_icon="📧",
+    page_title="✉️ Professional Bulk Email Sender",
+    page_icon="✉️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -50,10 +51,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Load Templates from JSON ---
+# --- Load Templates ---
 def load_templates():
-    with open('templates.json', 'r') as file:
-        return json.load(file)
+    try:
+        with open("template.json", "r") as file:
+            return json.load(file)
+    except FileNotFoundError:
+        st.error("Template file not found. Ensure 'template.json' is in the project directory.")
+        return {}
 
 templates = load_templates()
 
@@ -64,163 +69,76 @@ def load_contacts(file):
         df = pd.read_csv(file)
         required_columns = ['Name', 'Email']
         if not all(col in df.columns for col in required_columns):
-            st.error("CSV must contain 'Name' and 'Email' columns")
+            st.error("CSV must contain 'Name' and 'Email' columns.")
             return None
         return df
     except Exception as e:
-        st.error(f"Error loading contacts: {str(e)}")
+        st.error(f"Error loading contacts: {e}")
         return None
 
-def validate_email(email):
-    """Basic email validation"""
-    import re
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-    return re.match(pattern, email) is not None
-
-def get_mx_server(domain):
-    """Lookup MX records with error handling"""
+# --- Email Sending Function ---
+def send_email(to_email, subject, body, from_email, attachment_path=None):
     try:
-        result = dns.resolver.resolve(domain, 'MX')
-        return sorted([(r.preference, r.exchange.to_text()) for r in result])[0][1]
+        mx_records = dns.resolver.resolve(to_email.split('@')[1], 'MX')
+        mail_server = str(mx_records[0].exchange)
+        
+        # Connect to the mail server
+        with smtplib.SMTP(mail_server, 25) as server:
+            msg = MIMEMultipart()
+            msg['From'] = from_email
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Attach a file if provided
+            if attachment_path:
+                attachment = MIMEBase('application', 'octet-stream')
+                with open(attachment_path, 'rb') as attach_file:
+                    attachment.set_payload(attach_file.read())
+                encoders.encode_base64(attachment)
+                attachment.add_header('Content-Disposition', f'attachment; filename={Path(attachment_path).name}')
+                msg.attach(attachment)
+            
+            server.send_message(msg)
+        return True
     except Exception as e:
-        st.error(f"MX lookup failed for {domain}: {str(e)}")
-        return None
+        st.error(f"Failed to send email to {to_email}: {e}")
+        return False
 
-# --- Main Application Logic ---
-def main():
-    # Sidebar navigation with custom styling
-    with st.sidebar:
-        st.image("assets/logo.png", width=150)
-        st.title("Email Sender")
-        selected_page = st.radio(
-            "Navigation",
-            ["Dashboard", "Send Emails", "Templates", "Settings"],
-            index=0
-        )
-        
-        # Show current timezone info
-        st.markdown("---")
-        selected_timezone = st.selectbox(
-            "Timezone",
-            pytz.common_timezones,
-            index=pytz.common_timezones.index('UTC')
-        )
-        local_time = datetime.now(pytz.timezone(selected_timezone))
-        st.caption(f"Local time: {local_time.strftime('%H:%M:%S')}")
+# --- Streamlit App Interface ---
+st.title("✉️ Professional Bulk Email Sender")
+st.sidebar.header("Upload Contact List")
 
-    # Page content
-    if selected_page == "Dashboard":
-        st.title("📊 Dashboard")
-        
-        # Statistics cards in columns
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Emails Sent Today", "0")
-        with col2:
-            st.metric("Delivery Rate", "0%")
-        with col3:
-            st.metric("Templates Available", str(sum(len(cat) for cat in templates.values())))
-        
-        # Recent activity
-        st.subheader("Recent Activity")
-        st.info("No recent email campaigns")
+uploaded_file = st.sidebar.file_uploader("Upload CSV file with 'Name' and 'Email' columns", type=['csv'])
 
-    elif selected_page == "Send Emails":
-        st.title("📤 Send Bulk Emails")
+selected_template = st.sidebar.selectbox("Choose an Email Template", options=["Select a Template"] + [f"{cat} - {sub}" for cat in templates for sub in templates[cat]])
 
-        # Create tabs for different steps
-        tab1, tab2, tab3 = st.tabs(["1. Setup", "2. Content", "3. Review & Send"])
-        
-        with tab1:
-            st.subheader("Email Configuration")
-            sender_email = st.text_input("Sender Email Address")
-            sender_name = st.text_input("Sender Name")
-            smtp_password = st.text_input("SMTP Password", type="password")
-            
-            st.subheader("Upload Contacts")
-            contacts_file = st.file_uploader(
-                "Upload CSV file with contacts",
-                type=['csv'],
-                help="CSV must contain 'Name' and 'Email' columns"
-            )
-            
-            if contacts_file:
-                contacts_df = load_contacts(contacts_file)
-                if contacts_df is not None:
-                    st.success(f"✅ Loaded {len(contacts_df)} contacts")
-                    st.dataframe(contacts_df.head())
+if uploaded_file and selected_template != "Select a Template":
+    contacts_df = load_contacts(uploaded_file)
+    if contacts_df is not None:
+        st.sidebar.success(f"Loaded {len(contacts_df)} contacts.")
 
-        with tab2:
-            st.subheader("Email Content")
-            
-            # Template selection
-            category = st.selectbox("Category", list(templates.keys()))
-            template_name = st.selectbox("Template", list(templates[category].keys()))
-            selected_template = templates[category][template_name]
-            
-            # Email content editing
-            subject = st.text_input("Subject", value=selected_template["subject"])
-            body = st.text_area("Body", value=selected_template["body"], height=300)
-            
-            # Attachments
-            st.subheader("Attachments")
-            files = st.file_uploader("Upload files", accept_multiple_files=True)
-            if files:
-                for file in files:
-                    st.write(f"📎 {file.name}")
+        selected_category, selected_subcategory = selected_template.split(' - ')
+        template = templates[selected_category][selected_subcategory]
 
-        with tab3:
-            st.subheader("Review & Send")
-            
-            # Show preview
-            if 'contacts_df' in locals():
-                st.info("Preview for first recipient:")
-                preview_data = {
-                    "Name": contacts_df.iloc[0]["Name"],
-                    "ProductDetails": "Sample product details",
-                    "ProductLink": "https://example.com",
-                    "SenderName": sender_name
-                }
-                try:
-                    preview_body = body.format(**preview_data)
-                    st.code(preview_body)
-                except KeyError as e:
-                    st.error(f"Template error: Missing field {str(e)}")
-            
-            # Send button with confirmation
-            if st.button("Send Emails"):
-                # Add sending logic here
-                with st.spinner("Sending emails..."):
-                    time.sleep(2)  # Simulate sending
-                    st.success("✅ Emails sent successfully!")
+        # Input fields for email customization
+        from_email = st.text_input("Sender Email Address")
+        attachment_path = st.file_uploader("Upload Attachment (optional)", type=["pdf", "docx", "png", "jpg"])
 
-    elif selected_page == "Templates":
-        st.title("📝 Email Templates")
-        
-        # Template management interface
-        for category in templates:
-            st.subheader(category)
-            for template_name, template_content in templates[category].items():
-                with st.expander(template_name):
-                    st.write("**Subject:**", template_content["subject"])
-                    st.write("**Body:**")
-                    st.text(template_content["body"])
+        with st.form("email_form"):
+            subject = st.text_input("Email Subject", value=template['subject'])
+            body = st.text_area("Email Body", value=template['body'])
+            submit_button = st.form_submit_button("Send Emails")
 
-    elif selected_page == "Settings":
-        st.title("⚙️ Settings")
-        
-        # SMTP Settings
-        st.subheader("SMTP Configuration")
-        smtp_host = st.text_input("SMTP Host", value="smtp.gmail.com")
-        smtp_port = st.number_input("SMTP Port", value=587)
-        
-        # Email Limits
-        st.subheader("Sending Limits")
-        daily_limit = st.slider("Daily Email Limit", 0, 2000, 500)
-        batch_size = st.slider("Batch Size", 10, 100, 50)
-        
-        if st.button("Save Settings"):
-            st.success("Settings saved successfully!")
-
-if __name__ == "__main__":
-    main()
+            if submit_button and from_email:
+                st.info("Sending emails...")
+                success_count = 0
+                
+                for _, contact in contacts_df.iterrows():
+                    personalized_body = body.format(Name=contact['Name'])
+                    result = send_email(contact['Email'], subject, personalized_body, from_email, attachment_path)
+                    if result:
+                        success_count += 1
+                        time.sleep(1)  # Pause to avoid overwhelming SMTP servers
+                
+                st.success(f"Emails sent successfully to {success_count} out of {len(contacts_df)} contacts.")
