@@ -1,0 +1,18 @@
+{
+    "Marketing": {
+        "Product Launch": {
+            "subject": "🚀 Exciting New Product Launch!",
+            "body": "Hello {Name},\n\nWe're thrilled to announce our latest product launch!\n\n{ProductDetails}\n\nClick here to learn more: {ProductLink}\n\nBest regards,\n{SenderName}"
+        },
+        "Special Offer": {
+            "subject": "🎉 Exclusive Offer Just for You!",
+            "body": "Hi {Name},\n\nAs a valued customer, we're offering you an exclusive discount:\n\n{OfferDetails}\n\nUse code: {DiscountCode}\nValid until: {ExpiryDate}\n\nBest regards,\n{SenderName}"
+        }
+    },
+    "Event": {
+        "Webinar Invitation": {
+            "subject": "🎯 Join Our Upcoming Webinar",
+            "body": "Dear {Name},\n\nYou're invited to our exclusive webinar:\n\nTopic: {WebinarTopic}\nDate: {WebinarDate}\nTime: {WebinarTime}\n\nRegister now: {WebinarLink}\n\nBest regards,\n{SenderName}"
+        }
+    }
+}
