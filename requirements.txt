@@ -1,0 +1,5 @@
+streamlit==1.17.0
+pandas==2.1.0
+pytz==2023.3
+smtplib
+dnspython==2.3.1
