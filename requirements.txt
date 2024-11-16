@@ -1,7 +1,6 @@
 streamlit
 pandas
 pytz
-smtplib
 python-dotenv
 beautifulsoup4
 dns-python
